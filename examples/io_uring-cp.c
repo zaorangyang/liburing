@@ -20,8 +20,19 @@
 
 static int infd, outfd;
 
+/*
+ * 
+ */
 struct io_data {
+	/*
+	 * 表示此次submission的类型
+	 * 1: read
+	 * 0: write
+	 */
 	int read;
+	/*
+	 * first_offset对一开始的offset做备份 
+	 */
 	off_t first_offset, offset;
 	size_t first_len;
 	struct iovec iov;
@@ -77,9 +88,14 @@ static void queue_prepped(struct io_uring *ring, struct io_data *data)
 	io_uring_sqe_set_data(sqe, data);
 }
 
+/*
+ * offset: 文件位置偏移
+ * size: 要读取多长的内容 
+ */
 static int queue_read(struct io_uring *ring, off_t size, off_t offset)
 {
 	struct io_uring_sqe *sqe;
+	/* 用户的data域，uring不会对这个数据做任何更改 */
 	struct io_data *data;
 
 	data = malloc(size + sizeof(*data));
@@ -116,8 +132,13 @@ static void queue_write(struct io_uring *ring, struct io_data *data)
 	io_uring_submit(ring);
 }
 
+/*
+ * insize: src file的size 
+ */
 static int copy_file(struct io_uring *ring, off_t insize)
 {
+	/* reads: 记录提交的读事件的个数 */
+	/* writes: 记录提交的写事件的个数 */
 	unsigned long reads, writes;
 	struct io_uring_cqe *cqe;
 	off_t write_left, offset;
@@ -126,6 +147,10 @@ static int copy_file(struct io_uring *ring, off_t insize)
 	write_left = insize;
 	writes = reads = offset = 0;
 
+	/*
+	 * insize: 剩余的要从src file读取的size
+	 * write_left: 剩余的要写到dst file的size 
+	 */
 	while (insize || write_left) {
 		unsigned long had_reads;
 		int got_comp;
@@ -140,7 +165,7 @@ static int copy_file(struct io_uring *ring, off_t insize)
 			if (reads + writes >= QD)
 				break;
 			if (this_size > BS)
-				this_size = BS;
+				this_size = BS; /* 每次最多读取BS个Byte */
 			else if (!this_size)
 				break;
 
